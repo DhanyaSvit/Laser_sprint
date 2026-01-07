@@ -1,0 +1,146 @@
+<!DOCTYPE html> <html> <head> <title>Sprint Analysis Dashboard</title> <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <style> body { font-family: Arial; margin: 20px; color: white; background: #0c0c0c; } .container { max-width: 1200px; margin: auto; } .stats { display: flex; gap: 20px; margin: 20px 0; } .stat-card { background: rgb(242, 242, 242); color: black; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); flex: 1; } .live-table { background: rgb(7, 4, 75); padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin: 20px 0; } table { width: 100%; border-collapse: collapse; } th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; } th { background: #1a1a19; color: white; } .good { color: rgb(11, 23, 56); font-weight: bold; } .improve { color: orange; font-weight: bold; } </style> </head> <body> <!-- Velocity display --> <h2>Current Velocity: <span id="velValue">--</span> m/s</h2>
+    <div class="container">
+    <h1>🏃 Sprint Posture Analysis Dashboard</h1>
+
+    <div class="stats" id="stats"></div>
+
+    <div style="display: flex; gap: 20px;">
+        <div style="flex: 2;">
+            <h3>📊 Live Angle Data (Last 200 samples)</h3>
+            <div class="live-table">
+                <table id="angleTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Angle</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        <div style="flex: 1;">
+            <canvas id="angleChart" height="300"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    let chart;
+
+    async function loadStats() {
+        const res = await fetch("/stats");
+        const stats = await res.json();
+        const statsDiv = document.getElementById("stats");
+        statsDiv.innerHTML = "";
+
+        for (let [type, data] of Object.entries(stats)) {
+            const card = document.createElement("div");
+            card.className = "stat-card";
+            let feedback = "";
+
+            if (type.includes("leg")) {
+                if (data.avg > 160) {
+                    feedback = '<span class="good">✅ Upright Finish</span>';
+                } else if (data.avg < 120) {
+                    feedback = '<span class="improve">⚠️ Bend Knees More</span>';
+                } else {
+                    feedback = '<span class="good">✅ Good Range</span>';
+                }
+            } else {
+                if (data.max - data.min > 60) {
+                    feedback = '<span class="good">✅ Good Swing</span>';
+                } else {
+                    feedback = '<span class="improve">⚠️ More Arm Drive</span>';
+                }
+            }
+
+            card.innerHTML = `
+                <h3>${type.replace("_", " ").toUpperCase()}</h3>
+                <p><strong>Avg:</strong> ${data.avg.toFixed(1)}°</p>
+                <p><strong>Samples:</strong> ${data.count}</p>
+                <p><strong>Range:</strong> ${data.min.toFixed(1)}° - ${data.max.toFixed(1)}°</p>
+                <p>${feedback}</p>
+            `;
+            statsDiv.appendChild(card);
+        }
+    }
+
+    async function loadData() {
+        const res = await fetch("/data");
+        const angles = await res.json();
+
+        const tbody = document.querySelector("#angleTable tbody");
+        tbody.innerHTML = "";
+        angles.slice(0, 50).forEach(a => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${a.timestamp.slice(11, 19)}</td>
+                <td>${a.type}</td>
+                <td>${a.value.toFixed(1)}°</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        updateChart(angles);
+    }
+
+    function updateChart(data) {
+        const ctx = document.getElementById("angleChart").getContext("2d");
+        if (chart) chart.destroy();
+
+        chart = new Chart(ctx, {
+            type: "line",
+            data: {
+                labels: data.slice(0, 50).map((_, i) => i),
+                datasets: [
+                    {
+                        label: "Left Leg",
+                        data: data
+                            .filter(d => d.type === "left_leg")
+                            .slice(0, 50)
+                            .map(d => d.value),
+                        borderColor: "red",
+                        fill: false
+                    },
+                    {
+                        label: "Right Leg",
+                        data: data
+                            .filter(d => d.type === "right_leg")
+                            .slice(0, 50)
+                            .map(d => d.value),
+                        borderColor: "cyan",
+                        fill: false
+                    }
+                ]
+            },
+            options: { scales: { y: { min: 0, max: 180 } } }
+        });
+    }
+
+    async function loadVelocity() {
+        try {
+            const res = await fetch("/velocity");
+            const data = await res.json();
+            console.log("velocity response:", data);
+            const span = document.getElementById("velValue");
+            if (data.velocity !== undefined && !isNaN(data.velocity)) {
+                span.textContent = data.velocity.toFixed(2);
+            } else {
+                span.textContent = "--";
+            }
+        } catch (e) {
+            console.log("velocity error:", e);
+        }
+    }
+
+    // Initialize everything
+    loadStats();
+    loadData();
+    loadVelocity();
+    setInterval(loadStats, 3000);
+    setInterval(loadData, 2000);
+    setInterval(loadVelocity, 1000);
+</script>
+</body> </html>
